@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/athena"
 )
@@ -119,6 +120,31 @@ type Config struct {
 	PollFrequency time.Duration
 }
 
+func getAWSSession(cfg *Config, args *url.Values) (*session.Session, error) {
+
+	var acfg []*aws.Config
+	region := args.Get("region")
+	if region != "" {
+		acfg = append(acfg, &aws.Config{Region: aws.String(region)})
+	}
+	sess, err := session.NewSession(acfg...)
+	if err != nil {
+		return nil, err
+	}
+
+	if r := args.Get("role"); r != "" {
+		sess, err = session.NewSession(&aws.Config{
+			Credentials: stscreds.NewCredentials(sess, r),
+			Region:      aws.String(region),
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return sess, nil
+}
+
 func configFromConnectionString(connStr string) (*Config, error) {
 	args, err := url.ParseQuery(connStr)
 	if err != nil {
@@ -127,11 +153,7 @@ func configFromConnectionString(connStr string) (*Config, error) {
 
 	var cfg Config
 
-	var acfg []*aws.Config
-	if region := args.Get("region"); region != "" {
-		acfg = append(acfg, &aws.Config{Region: aws.String(region)})
-	}
-	cfg.Session, err = session.NewSession(acfg...)
+	cfg.Session, err = getAWSSession(&cfg, &args)
 	if err != nil {
 		return nil, err
 	}
